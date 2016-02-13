@@ -1,6 +1,6 @@
 vk_api_auth
 ===========
 
-Python module for authorization in vk.com API.
+Python 3 vk.com authorization module. Current API version is 5.44.
 
-vk_auth.py contains module, fetch_photos.py -- usage example.
+vk_auth.py contains module, fetch_photos.py -- API usage example.

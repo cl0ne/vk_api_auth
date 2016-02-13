@@ -1,11 +1,13 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: UTF-8 -*-
 
-import cookielib
-import urllib2
-import urllib
-from urlparse import urlparse
-from HTMLParser import HTMLParser
+import urllib.request as request
+from html.parser import HTMLParser
+from urllib.parse import urlparse, urlencode
+from http.cookiejar import CookieJar
+
+API_VERSION = '5.44'
+
 
 class FormParser(HTMLParser):
     def __init__(self):
@@ -43,6 +45,7 @@ class FormParser(HTMLParser):
             self.in_form = False
             self.form_parsed = True
 
+
 def auth(email, password, client_id, scope):
     def split_key_value(kv_pair):
         kv = kv_pair.split("=")
@@ -50,25 +53,36 @@ def auth(email, password, client_id, scope):
 
     # Authorization form
     def auth_user(email, password, client_id, scope, opener):
-        response = opener.open(
-            "http://oauth.vk.com/oauth/authorize?" + \
-            "redirect_uri=http://oauth.vk.com/blank.html&response_type=token&" + \
-            "client_id=%s&scope=%s&display=wap" % (client_id, ",".join(scope))
-            )
-        doc = response.read()
+        request_params = {
+            'redirect_uri': 'https://oauth.vk.com/blank.html',
+            'response_type': 'token',
+            'client_id': client_id,
+            'display': 'mobile',
+            'scope': ','.join(scope),
+            'v': API_VERSION
+        }
+        base_auth_url = 'https://oauth.vk.com/authorize'
+        params = list(request_params.items())
+        params = urlencode(params).encode('utf-8')
+        response = opener.open(base_auth_url, params)
+        doc = response.read().decode(encoding='utf-8', errors='replace')
         parser = FormParser()
         parser.feed(doc)
         parser.close()
-        if not parser.form_parsed or parser.url is None or "pass" not in parser.params or \
-          "email" not in parser.params:
-              raise RuntimeError("Something wrong")
+        if (not parser.form_parsed or
+                parser.url is None or
+                "pass" not in parser.params or
+                "email" not in parser.params):
+            raise RuntimeError("Something wrong")
         parser.params["email"] = email
         parser.params["pass"] = password
         if parser.method == "POST":
-            response = opener.open(parser.url, urllib.urlencode(parser.params))
+            params = urlencode(parser.params).encode('utf-8')
+            response = opener.open(parser.url, params)
         else:
             raise NotImplementedError("Method '%s'" % parser.method)
-        return response.read(), response.geturl()
+        doc = response.read().decode(encoding='utf-8', errors='replace')
+        return doc, response.geturl()
 
     # Permission request form
     def give_access(doc, opener):
@@ -76,19 +90,20 @@ def auth(email, password, client_id, scope):
         parser.feed(doc)
         parser.close()
         if not parser.form_parsed or parser.url is None:
-              raise RuntimeError("Something wrong")
+            raise RuntimeError("Something wrong")
         if parser.method == "POST":
-            response = opener.open(parser.url, urllib.urlencode(parser.params))
+            params = urlencode(parser.params).encode('utf-8')
+            response = opener.open(parser.url, params)
         else:
-            raise NotImplementedError("Method '%s'" % parser.method)
+            raise NotImplementedError("Method '{0}'".format(parser.method))
         return response.geturl()
-
 
     if not isinstance(scope, list):
         scope = [scope]
-    opener = urllib2.build_opener(
-        urllib2.HTTPCookieProcessor(cookielib.CookieJar()),
-        urllib2.HTTPRedirectHandler())
+
+    opener = request.build_opener(
+            request.HTTPCookieProcessor(CookieJar()),
+            request.HTTPRedirectHandler())
     doc, url = auth_user(email, password, client_id, scope, opener)
     if urlparse(url).path != "/blank.html":
         # Need to give access to requested scope
@@ -99,4 +114,3 @@ def auth(email, password, client_id, scope):
     if "access_token" not in answer or "user_id" not in answer:
         raise RuntimeError("Missing some values in answer")
     return answer["access_token"], answer["user_id"]
-
